@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Single Letter Reaction Tester</title>
+  <style>
+    :root{--bg:#f6fbf6;--panel:#ffffff;--accent:#2b8cff}
+    body{font-family:Inter, system-ui, Arial; margin:0; min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,#e9f5ff, #f6fbf6);color:#0b2233}
+    .card{width:920px;max-width:96%;background:var(--panel);border-radius:14px;box-shadow:0 10px 30px rgba(15,35,50,.08);padding:20px;display:grid;grid-template-columns:360px 1fr;gap:18px}
+    .left{display:flex;flex-direction:column;align-items:center;gap:12px}
+    .letter{height:260px;width:320px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:160px;font-weight:800;background:linear-gradient(180deg,#fff,#f1f6ff);box-shadow:inset 0 -6px 18px rgba(43,140,255,.06);}
+    .controls{width:100%;display:flex;flex-direction:column;gap:8px}
+    label{font-size:13px;color:#234}
+    input[type=range]{width:100%}
+    .row{display:flex;gap:10px;align-items:center}
+    button{background:var(--accent);color:#fff;border:0;padding:10px 14px;border-radius:8px;font-weight:700;cursor:pointer}
+    button.secondary{background:transparent;color:var(--accent);border:2px solid var(--accent)}
+    .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:6px}
+    .stat{background:#f7fbff;border-radius:10px;padding:10px;text-align:center}
+    .stat .n{font-size:20px;font-weight:800}
+    .right{padding:6px 2px}
+    .log{height:380px;background:#fbfbff;border-radius:10px;padding:10px;overflow:auto;border:1px solid #eef3ff}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:8px;text-align:left;border-bottom:1px dashed #e9f3ff;font-size:13px}
+    .small{font-size:12px;color:#456}
+    .controls-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .center{display:flex;align-items:center;justify-content:center}
+    .big-btn{padding:14px 18px;font-size:18px}
+    footer{margin-top:8px;text-align:right;font-size:12px;color:#567}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="left">
+      <div class="letter" id="letter">—</div>
+
+      <div class="controls" style="width:320px;">
+        <div class="controls-grid">
+          <div>
+            <label>Letter display duration (ms): <span id="durVal">900</span></label>
+            <input id="duration" type="range" min="150" max="2000" step="50" value="900">
+          </div>
+          <div>
+            <label>Delay between letters (ms): <span id="delayVal">700</span></label>
+            <input id="delay" type="range" min="0" max="3000" step="50" value="700">
+          </div>
+        </div>
+
+        <div style="margin-top:6px;" class="row">
+          <button id="start" class="big-btn">Start</button>
+          <button id="stop" class="big-btn secondary">Stop</button>
+        </div>
+
+        <div class="stats">
+          <div class="stat"><div class="small">Shown</div><div id="shown" class="n">0</div></div>
+          <div class="stat"><div class="small">Correct</div><div id="correct" class="n">0</div></div>
+          <div class="stat"><div class="small">Missed/Wrong</div><div id="missed" class="n">0</div></div>
+          <div class="stat"><div class="small">WPM</div><div id="wpm" class="n">—</div></div>
+        </div>
+
+        <div style="margin-top:10px;display:flex;gap:8px;">
+          <button id="reset" class="secondary">Reset Stats</button>
+          <button id="export">Export CSV</button>
+        </div>
+
+        <div style="margin-top:10px;font-size:13px;color:#345">Tip: focus on the letter area and press the corresponding key on your keyboard as quickly as you can. Shift/Alt/Ctrl ignored.</div>
+      </div>
+    </div>
+
+    <div class="right">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div>
+          <strong>Session results</strong>
+          <div class="small">Times are in milliseconds (ms)</div>
+        </div>
+        <div class="small">Press <kbd>Space</kbd> to pause/resume</div>
+      </div>
+
+      <div class="log" id="log">
+        <table id="table"><thead><tr><th>#</th><th>Letter</th><th>Result</th><th>Time (ms)</th></tr></thead><tbody></tbody></table>
+      </div>
+
+      <footer>
+        Average: <span id="avg">—</span> ms &nbsp; • &nbsp; Best: <span id="best">—</span> ms
+      </footer>
+    </div>
+  </div>
+
+<script>
+(function(){
+  const letterEl = document.getElementById('letter');
+  const startBtn = document.getElementById('start');
+  const stopBtn = document.getElementById('stop');
+  const resetBtn = document.getElementById('reset');
+  const exportBtn = document.getElementById('export');
+  const shownEl = document.getElementById('shown');
+  const correctEl = document.getElementById('correct');
+  const missedEl = document.getElementById('missed');
+  const wpmEl = document.getElementById('wpm');
+  const dur = document.getElementById('duration');
+  const delay = document.getElementById('delay');
+  const durVal = document.getElementById('durVal');
+  const delayVal = document.getElementById('delayVal');
+  const tableBody = document.querySelector('#table tbody');
+  const avgEl = document.getElementById('avg');
+  const bestEl = document.getElementById('best');
+
+  let running = false;
+  let currentLetter = null;
+  let shownAt = 0;
+  let hideTimeout = null;
+  let nextTimeout = null;
+  let session = [];
+  let counter = 0;
+  let paused = false;
+
+  function randLetter(){
+    const A = 65; // 'A'
+    return String.fromCharCode(A + Math.floor(Math.random()*26));
+  }
+
+  function showLetter(){
+    if(!running) return;
+    currentLetter = randLetter();
+    letterEl.textContent = currentLetter;
+    shownAt = performance.now();
+    counter++;
+    shownEl.textContent = counter;
+
+    clearTimeout(hideTimeout);
+    hideTimeout = setTimeout(()=>{
+      recordResult(currentLetter, 'missed', null);
+      letterEl.textContent = '—';
+      currentLetter = null;
+      if(running) scheduleNext();
+    }, Number(dur.value));
+  }
+
+  function scheduleNext(){
+    clearTimeout(nextTimeout);
+    nextTimeout = setTimeout(()=>{
+      if(!running) return;
+      showLetter();
+    }, Number(delay.value));
+  }
+
+  function recordResult(letter, type, time){
+    const idx = session.length + 1;
+    session.push({idx,letter,type,time});
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${idx}</td><td>${letter}</td><td>${type}</td><td>${time==null?'-':Math.round(time)}</td>`;
+    tableBody.insertBefore(tr, tableBody.firstChild);
+
+    if(type === 'correct'){
+      correctEl.textContent = Number(correctEl.textContent) + 1;
+    } else {
+      missedEl.textContent = Number(missedEl.textContent) + 1;
+    }
+    updateSummary();
+  }
+
+  function updateSummary(){
+    const times = session.filter(s=>s.type==='correct').map(s=>s.time);
+    if(times.length===0){ avgEl.textContent='—'; bestEl.textContent='—'; wpmEl.textContent='—'; return }
+    const avg = times.reduce((a,b)=>a+b,0)/times.length;
+    const best = Math.min(...times);
+    const wpm = 60000 / avg; // words per minute (1 char per word assumption)
+    avgEl.textContent = Math.round(avg);
+    bestEl.textContent = Math.round(best);
+    wpmEl.textContent = Math.round(wpm);
+  }
+
+  window.addEventListener('keydown', (e)=>{
+    if(!running || paused) return;
+    if(e.key === ' '){
+      e.preventDefault();
+    }
+    const k = e.key.toUpperCase();
+    if(!currentLetter) return;
+    if(k.length === 1 && /[A-Z]/.test(k)){
+      const now = performance.now();
+      const delta = now - shownAt;
+      if(k === currentLetter){
+        clearTimeout(hideTimeout);
+        recordResult(currentLetter, 'correct', delta);
+        currentLetter = null;
+        letterEl.textContent = '—';
+        if(running) scheduleNext();
+      } else {
+        recordResult(currentLetter, 'wrong', delta);
+      }
+    }
+  });
+
+  window.addEventListener('keyup', (e)=>{
+    if(e.key===' '){ togglePause(); }
+  });
+
+  function start(){
+    if(running) return;
+    running = true;
+    paused = false;
+    counter = 0;
+    shownEl.textContent = '0';
+    correctEl.textContent = '0';
+    missedEl.textContent = '0';
+    wpmEl.textContent = '—';
+    tableBody.innerHTML = '';
+    session = [];
+    showLetter();
+  }
+  function stop(){
+    running = false;
+    paused = false;
+    clearTimeout(hideTimeout); clearTimeout(nextTimeout);
+    currentLetter = null;
+    letterEl.textContent = '—';
+  }
+  function reset(){
+    stop();
+    session = [];
+    tableBody.innerHTML = '';
+    shownEl.textContent = '0'; correctEl.textContent = '0'; missedEl.textContent = '0'; wpmEl.textContent = '—';
+    avgEl.textContent = '—'; bestEl.textContent = '—';
+    counter = 0;
+  }
+
+  function togglePause(){
+    if(!running) return;
+    paused = !paused;
+    if(paused){
+      clearTimeout(hideTimeout); clearTimeout(nextTimeout);
+      letterEl.style.opacity = '0.45';
+    } else {
+      letterEl.style.opacity = '1';
+      scheduleNext();
+    }
+  }
+
+  function exportCSV(){
+    if(session.length===0) return alert('No data yet');
+    const rows = [['#','Letter','Result','Time(ms)']].concat(session.map(s=>[s.idx,s.letter,s.type,s.time==null?'':Math.round(s.time)]));
+    const csv = rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv],{type:'text/csv'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'reaction_session.csv'; a.click(); URL.revokeObjectURL(url);
+  }
+
+  startBtn.addEventListener('click', start);
+  stopBtn.addEventListener('click', stop);
+  resetBtn.addEventListener('click', reset);
+  exportBtn.addEventListener('click', exportCSV);
+  dur.addEventListener('input', ()=> durVal.textContent = dur.value);
+  delay.addEventListener('input', ()=> delayVal.textContent = delay.value);
+})();
+</script>
+</body>
+</html>
